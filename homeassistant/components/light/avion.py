@@ -14,7 +14,7 @@ from homeassistant.components.light import (
     PLATFORM_SCHEMA)
 import homeassistant.helpers.config_validation as cv
 
-REQUIREMENTS = ['avion==0.5']
+REQUIREMENTS = ['https://github.com/antsar/python-avion/archive/issue2-pindeps.zip#avion==issue2-pindeps']
 
 _LOGGER = logging.getLogger(__name__)
 
