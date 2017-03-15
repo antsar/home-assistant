@@ -5,39 +5,42 @@ For more details about this platform, please refer to the documentation at
 https://home-assistant.io/components/light.avion/
 """
 import logging
+import time
 
 import voluptuous as vol
 
-from homeassistant.const import CONF_API_KEY, CONF_DEVICES, CONF_NAME
+from homeassistant.const import CONF_API_KEY, CONF_DEVICES, CONF_NAME, CONF_MAC
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS, SUPPORT_BRIGHTNESS, Light,
     PLATFORM_SCHEMA)
 import homeassistant.helpers.config_validation as cv
 
-REQUIREMENTS = ['avion==0.5']
+REQUIREMENTS = ['https://github.com/antsar/python-avion/archive/hotfix.zip#avion==hotfix']
 
 _LOGGER = logging.getLogger(__name__)
 
 SUPPORT_AVION_LED = (SUPPORT_BRIGHTNESS)
 
 DEVICE_SCHEMA = vol.Schema({
-    vol.Optional(CONF_NAME): cv.string,
-    vol.Required(CONF_API_KEY): cv.string,
+    vol.Optional(CONF_NAME, default=''): cv.string,
 })
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_DEVICES, default={}): {cv.string: DEVICE_SCHEMA},
+    vol.Required(CONF_MAC): cv.string,
+    vol.Required(CONF_API_KEY): cv.string,
 })
 
 
 def setup_platform(hass, config, add_devices, discovery_info=None):
     """Set up an Avion switch."""
     lights = []
-    for address, device_config in config[CONF_DEVICES].items():
+    for device_id, device_config in config[CONF_DEVICES].items():
         device = {}
-        device['name'] = device_config[CONF_NAME]
-        device['key'] = device_config[CONF_API_KEY]
-        device['address'] = address
+        device['name'] = device_config[CONF_NAME] or name
+        device['id'] = device_id
+        device['key'] = config[CONF_API_KEY]
+        device['address'] = config[CONF_MAC]
         light = AvionLight(device)
         if light.is_valid:
             lights.append(light)
@@ -52,14 +55,24 @@ class AvionLight(Light):
         """Initialize the light."""
         # pylint: disable=import-error
         import avion
+        from bluepy import btle
 
         self._name = device['name']
         self._address = device['address']
         self._key = device['key']
+        self._id = device['id']
         self._brightness = 255
         self._state = False
         self._switch = avion.avion(self._address, self._key)
-        self._switch.connect()
+        initial = time.time()
+        while True:
+            if time.time() - initial >= 10:
+                raise Exception('Failed to connect.')
+            try:
+                self._switch.connect()
+                break
+            except btle.BTLEException:
+                pass
         self.is_valid = True
 
     @property
@@ -109,10 +122,10 @@ class AvionLight(Light):
         if brightness is not None:
             self._brightness = brightness
 
-        self.set_state(self.brightness)
+        self.set_state(self.brightness, self._id)
         self._state = True
 
     def turn_off(self, **kwargs):
         """Turn the specified or all lights off."""
-        self.set_state(0)
+        self.set_state(0, self._id)
         self._state = False
