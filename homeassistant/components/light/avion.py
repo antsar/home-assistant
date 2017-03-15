@@ -10,22 +10,23 @@ import time
 import voluptuous as vol
 
 from homeassistant.const import CONF_API_KEY, CONF_DEVICES, CONF_NAME, \
-    CONF_USERNAME, CONF_PASSWORD
-
+    CONF_ID, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS, SUPPORT_BRIGHTNESS, Light,
     PLATFORM_SCHEMA)
 import homeassistant.helpers.config_validation as cv
 
-REQUIREMENTS = ['avion==0.7']
+REQUIREMENTS = ['https://github.com/antsar/python-avion/archive/add-objectid.zip#avion==add-objectid']
+
 
 _LOGGER = logging.getLogger(__name__)
 
 SUPPORT_AVION_LED = (SUPPORT_BRIGHTNESS)
 
 DEVICE_SCHEMA = vol.Schema({
-    vol.Optional(CONF_NAME): cv.string,
+    vol.Optional(CONF_NAME, default=''): cv.string,
     vol.Required(CONF_API_KEY): cv.string,
+    vol.Optional(CONF_ID): cv.positive_int,
 })
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
@@ -58,6 +59,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     for address, device_config in config[CONF_DEVICES].items():
         device = {}
         device['name'] = device_config[CONF_NAME]
+        device['id'] = device_config[CONF_ID]
         device['key'] = device_config[CONF_API_KEY]
         device['address'] = address
         lights.append(AvionLight(device))
@@ -72,18 +74,27 @@ class AvionLight(Light):
         """Initialize the light."""
         # pylint: disable=import-error
         import avion
+        from bluepy import btle
 
         self._name = device['name']
         self._address = device['address']
         self._key = device['key']
+        self._id = device['id']
         self._brightness = 255
         self._state = False
         self._switch = avion.avion(self._address, self._key)
+        try:
+            self._switch.connect()
+            self.is_valid = True
+        except btle.BTLEException:
+            _LOGGER.warning('Could not connect to Avi-on device {}'
+                            .format(self._address))
+            self.is_valid = False
 
     @property
     def unique_id(self):
         """Return the ID of this light."""
-        return "{}.{}".format(self.__class__, self._address)
+        return "{}.{}.{}".format(self.__class__, self._address, self._id)
 
     @property
     def name(self):
@@ -127,7 +138,7 @@ class AvionLight(Light):
             if time.monotonic() - initial >= 10:
                 return False
             try:
-                self._switch.set_brightness(brightness)
+                self._switch.set_brightness(brightness, self._id)
                 break
             except avion.avionException:
                 self._switch.connect()
